@@ -2,7 +2,7 @@
 Demo Folder Monitoring Fragment
 
 ## [Download Here][Download]
-[Download]: [https://github.com/thekevinholman/LogOnAsAServiceRunAsHelperMP/archive/refs/heads/master.zip]
+[Download]: https://github.com/thekevinholman/LogOnAsAServiceRunAsHelperMP/archive/refs/heads/master.zip
 
 Version History:
 * 1.0.0.0
