@@ -1,0 +1,926 @@
+﻿<?xml version="1.0" encoding="utf-8"?><ManagementPack ContentReadable="true" SchemaVersion="2.0" OriginalSchemaVersion="1.1" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+  <Manifest>
+    <Identity>
+      <ID>Demo.FolderMonitoring</ID>
+      <Version>1.0.0.1</Version>
+    </Identity>
+    <Name>Demo.FolderMonitoring</Name>
+    <References>
+      <Reference Alias="System">
+        <ID>System.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="SC">
+        <ID>Microsoft.SystemCenter.Library</ID>
+        <Version>7.0.8433.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="Windows">
+        <ID>Microsoft.Windows.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>	  
+      <Reference Alias="Health">
+        <ID>System.Health.Library</ID>
+        <Version>7.0.8433.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="Perf">
+        <ID>System.Performance.Library</ID>
+        <Version>7.0.8433.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="MSDL">
+        <ID>Microsoft.SystemCenter.DataWarehouse.Library</ID>
+        <Version>7.0.8433.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>	
+    </References>
+  </Manifest>
+  <TypeDefinitions>
+    <EntityTypes>
+      <ClassTypes>
+        <ClassType ID="Demo.FolderMonitoring.Class" Base="Windows!Microsoft.Windows.LocalApplication" Accessibility="Public" Abstract="false" Hosted="true" Singleton="false">
+          <Property ID="FolderPath" Type="string" AutoIncrement="false" Key="true" CaseSensitive="false" MaxLength="256" MinLength="0" Required="true" Scale="0" />
+        </ClassType>
+      </ClassTypes>
+    </EntityTypes>
+    <ModuleTypes>
+      <DataSourceModuleType ID="Demo.FolderMonitoring.FolderPath.Discovery.DS" Accessibility="Internal" Batching="false">
+        <Configuration>
+          <xsd:element name="IntervalSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="SyncTime" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="DebugLogging" type="xsd:boolean" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="FolderPathList" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />	
+          <xsd:element name="TimeoutSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />		  
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+          <OverrideableParameter ID="SyncTime" Selector="$Config/SyncTime$" ParameterType="string" />
+          <OverrideableParameter ID="DebugLogging" Selector="$Config/DebugLogging$" ParameterType="bool" />
+		  <OverrideableParameter ID="FolderPathList" Selector="$Config/FolderPathList$" ParameterType="string" />
+          <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />		  
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <DataSource ID="DS" TypeID="Windows!Microsoft.Windows.TimedPowerShell.DiscoveryProvider">
+                <IntervalSeconds>$Config/IntervalSeconds$</IntervalSeconds>
+                <SyncTime>$Config/SyncTime$</SyncTime>
+                <ScriptName>Demo.FolderMonitoring.FolderPath.Discovery.DS.ps1</ScriptName>
+                <ScriptBody>
+#=================================================================================
+#  Discovery Script to discover Folder objects by path
+#
+#  Author: Kevin Holman
+#  v1.0
+#=================================================================================
+param($SourceId,$ManagedEntityId,$ComputerName,$DebugLogging,$FolderPathList)
+
+
+# Manual Testing section - put stuff here for manually testing script - typically parameters:
+#=================================================================================
+# $SourceId = '{00000000-0000-0000-0000-000000000000}'
+# $ManagedEntityId = '{00000000-0000-0000-0000-000000000000}'
+# $ComputerName = "computername.domain.com"
+# $DebugLogging = "false"
+# $FolderPathList = "%WINDIR%\System32\Drivers"
+#=================================================================================
+
+
+# Constants section - modify stuff here:
+#=================================================================================
+# Assign script name variable for use in event logging.  
+# ScriptName should be the same as the ID of the module that the script is contained in
+$ScriptName = "Demo.FolderMonitoring.FolderPath.Discovery.DS.ps1"
+$EventID = "1320"
+#=================================================================================
+
+
+# Starting Script section - All scripts get this
+#=================================================================================
+# Gather the start time of the script
+$StartTime = Get-Date
+#Set variable to be used in logging events
+$whoami = whoami
+# Load MOMScript API
+$momapi = New-Object -comObject MOM.ScriptAPI
+#Log script event that we are starting task
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`nScript is starting. `nRunning as ($whoami). `nFolderPathList: ($FolderPathList).")
+#=================================================================================
+	
+
+# Discovery Script section - Discovery scripts get this
+#=================================================================================
+# Load SCOM Discovery module
+$DiscoveryData = $momapi.CreateDiscoveryData(0, $SourceId, $ManagedEntityId)
+#=================================================================================	
+
+
+# Begin MAIN script section
+#=================================================================================
+#Clean up FolderPathList
+$FolderPathListString = $FolderPathList.ToUpper()
+$FolderPathListString = $FolderPathListString.Replace('%WINDIR%',$env:WinDir)
+
+# Test to see if folder exists
+$Folder = $FolderPathListString
+$FolderExists = Test-Path $Folder
+
+# If folder exists create instance of class
+If ($FolderExists -eq $true)
+{
+  $instance = $DiscoveryData.CreateClassInstance("$MPElement[Name='Demo.FolderMonitoring.Class']$")
+  $instance.AddProperty("$MPElement[Name='Windows!Microsoft.Windows.Computer']/PrincipalName$", $ComputerName)
+  $instance.AddProperty("$MPElement[Name='Demo.FolderMonitoring.Class']/FolderPath$", $Folder)
+  $instance.AddProperty("$MPElement[Name='System!System.Entity']/DisplayName$", $ComputerName)
+  $DiscoveryData.AddInstance($instance)
+	
+  # Log an event that objects were discovered
+  $momapi.LogScriptEvent($ScriptName,$EventID,0,"`nDiscovery script is returning objects for ($ComputerName)\($Folder)") 	
+}
+Else
+{
+  # Log an event for no objects discovered
+  $momapi.LogScriptEvent($ScriptName,$EventID,0,"`nDiscovery script returned no discovered objects") 		
+}
+
+# Return Discovery Items Normally           
+$DiscoveryData
+# Return Discovery Bag to the command line for testing (does not work from ISE)
+# $momapi.Return($DiscoveryData)
+#=================================================================================
+# End MAIN script section
+
+
+# End of script section
+#=================================================================================
+#Log an event for script ending and total execution time.
+$EndTime = Get-Date
+$ScriptTime = ($EndTime - $StartTime).TotalSeconds
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`nScript Completed. `nScript Runtime: ($ScriptTime) seconds.")
+#=================================================================================
+# End of script
+
+                </ScriptBody>
+                <Parameters>
+                  <Parameter>
+                    <Name>SourceId</Name>
+                    <Value>$MPElement$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>ManagedEntityId</Name>
+                    <Value>$Target/Id$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>ComputerName</Name>
+                    <Value>$Target/Host/Property[Type="Windows!Microsoft.Windows.Computer"]/PrincipalName$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>DebugLogging</Name>
+                    <Value>$Config/DebugLogging$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>FolderPathList</Name>
+                    <Value>$Config/FolderPathList$</Value>
+                  </Parameter>
+                </Parameters>
+                <TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+              </DataSource>
+            </MemberModules>
+            <Composition>
+              <Node ID="DS" />
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.Discovery.Data</OutputType>
+      </DataSourceModuleType>	
+      <DataSourceModuleType ID="Demo.FolderMonitoring.Performance.Filtered.DS" Accessibility="Public" Batching="false">
+        <Configuration>
+		  <xsd:element minOccurs="1" type="xsd:integer" name="IntervalSeconds" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+		  <xsd:element minOccurs="1" type="xsd:string" name="FolderPath" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+		  <xsd:element minOccurs="1" type="xsd:integer" name="TimeoutSeconds" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+		  <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+		  <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <DataSource ID="DS" TypeID="Demo.FolderMonitoring.Performance.DS">
+                <IntervalSeconds>$Config/IntervalSeconds$</IntervalSeconds>
+                <FolderPath>$Config/FolderPath$</FolderPath>
+				<TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+              </DataSource>
+              <ConditionDetection ID="Filter" TypeID="System!System.ExpressionFilter">
+				  <Expression>
+					<SimpleExpression>
+					  <ValueExpression>
+						<XPathQuery Type="String">Property[@Name='FolderPath']</XPathQuery>
+					  </ValueExpression>
+					  <Operator>Equal</Operator>
+					  <ValueExpression>
+						<Value Type="String">$Config/FolderPath$</Value>
+					  </ValueExpression>
+					</SimpleExpression>
+				  </Expression>
+              </ConditionDetection>
+            </MemberModules>
+            <Composition>
+              <Node ID="Filter">
+                <Node ID="DS" />
+              </Node>
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.PropertyBagData</OutputType>
+      </DataSourceModuleType>	
+      <DataSourceModuleType ID="Demo.FolderMonitoring.Performance.DS" Accessibility="Internal" Batching="false">
+        <Configuration>
+		  <xsd:element minOccurs="1" type="xsd:integer" name="IntervalSeconds" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+		  <xsd:element minOccurs="1" type="xsd:string" name="FolderPath" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+		  <xsd:element minOccurs="1" type="xsd:integer" name="TimeoutSeconds" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />	
+        </Configuration>
+        <OverrideableParameters>
+		  <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+		  <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <DataSource ID="Scheduler" TypeID="System!System.Scheduler">
+                <Scheduler>
+                  <SimpleReccuringSchedule>
+                    <Interval Unit="Seconds">$Config/IntervalSeconds$</Interval>
+                  </SimpleReccuringSchedule>
+                  <ExcludeDates />
+                </Scheduler>
+              </DataSource>
+              <ProbeAction ID="PA" TypeID="Windows!Microsoft.Windows.PowerShellPropertyBagTriggerOnlyProbe">
+                <ScriptName>Demo.FolderMonitoring.Performance.DS.ps1</ScriptName>
+                <ScriptBody>
+#=================================================================================
+#  Script to collect data from a Folder
+#
+#  Author: Kevin Holman
+#  v1.0
+#
+#=================================================================================
+param($FolderPath)
+
+# Manual Testing section - put stuff here for manually testing script - typically parameters:
+#=================================================================================
+# $FolderPath = "C:\TEMP"
+#=================================================================================
+
+
+# Constants section - modify stuff here:
+#=================================================================================
+# Assign script name variable for use in event logging.  
+# ScriptName should be the same as the ID of the module that the script is contained in
+$ScriptName = "Demo.FolderMonitoring.Performance.DS.ps1"
+$EventID = "1321"
+#=================================================================================
+
+
+# Starting Script section - All scripts get this
+#=================================================================================
+# Gather the start time of the script
+$StartTime = Get-Date
+#Set variable to be used in logging events
+$whoami = whoami
+# Load MOMScript API
+$momapi = New-Object -comObject MOM.ScriptAPI
+#Log script event that we are starting task
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`nScript is starting. `nRunning as ($whoami). `nFolderPath:($FolderPath).")
+#=================================================================================
+
+
+# PropertyBag Script section - Monitoring scripts get this
+#=================================================================================
+# Load SCOM PropertyBag function
+$bag = $momapi.CreatePropertyBag()
+#=================================================================================
+
+
+# Begin MAIN script section
+#=================================================================================
+
+# Test to see if the folder exists and exit with error if not
+IF (!(Test-Path $FolderPath))
+{
+  $Message = "FATAL ERROR:  The expected folder ($FolderPath) was not found."
+  $momapi.LogScriptEvent($ScriptName,$EventID,1,$Message)
+  $bag.AddValue('FolderPath',$FolderPath)
+  $bag.AddValue('Result','BadCondition')
+  $bag.AddValue('Message',$Message)
+  $bag.AddValue("FolderAgeMinutes",0)
+  $bag.AddValue("FolderItemsCount",0)
+  $bag.AddValue("FolderSizeMB",0)
+
+  # Return all bags
+  $bag
+  EXIT
+}
+
+# Clear any previous errors
+$Error.Clear()
+
+#Get Folder Object
+$FolderObj = Get-Item $FolderPath
+$FolderObjLastWriteTime = $FolderObj.LastWriteTime
+
+#Get Folder Age in Minutes
+[double]$FolderAgeMinutes = ($StartTime - $FolderObjLastWriteTime).TotalMinutes
+$FolderAgeMinutes = [math]::Round($FolderAgeMinutes,1)
+
+#Get folder items into an array
+$FolderItems = Get-ChildItem $FolderPath
+# Use recurse optionally to get all files in subfolders
+# $FolderItems = Get-ChildItem $FolderPath -Recurse
+
+#Exit the script if we throw an error from Get-ChildItem
+IF ($Error) 
+{ 
+  $Message = "FATAL ERROR:  Error while getting folderitems in path: ($FolderPath). `nTerminating script. `nError is: ($Error)."
+  $momapi.LogScriptEvent($ScriptName,$EventID,1,$Message)
+  $bag.AddValue('FolderPath',$FolderPath)
+  $bag.AddValue('Result','BadCondition')
+  $bag.AddValue('Message',$Message)
+  $bag.AddValue("FolderAgeMinutes",0)
+  $bag.AddValue("FolderItemsCount",0)
+  $bag.AddValue("FolderSizeMB",0)
+
+  # Return all bags
+  $bag
+  EXIT
+}
+
+[int]$FolderItemsCount = $FolderItems.Count
+
+$FolderItemsSizeMB = [math]::Round(($FolderItems | Measure-Object -Property Length -Sum).Sum / 1MB,1)
+
+# Fill propertybags normally
+$bag.AddValue("FolderPath",$FolderPath)
+$bag.AddValue('Result','GoodCondition')
+$bag.AddValue('Message','Returning Items Normally')
+$bag.AddValue("FolderAgeMinutes",$FolderAgeMinutes)
+$bag.AddValue("FolderItemsCount",$FolderItemsCount)
+$bag.AddValue("FolderSizeMB",$FolderItemsSizeMB)
+
+# Return all bags for path
+$bag
+
+#=================================================================================
+# End MAIN script section
+
+
+# End of script section
+#=================================================================================
+#Log an event for script ending and total execution time.
+$EndTime = Get-Date
+$ScriptTime = ($EndTime - $StartTime).TotalSeconds
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`nScript Completed. `nRuntime: ($ScriptTime) seconds.")
+#=================================================================================
+# End of script
+
+                </ScriptBody>
+                <Parameters>
+                  <Parameter>
+                    <Name>FolderPath</Name>
+                    <Value>$Config/FolderPath$</Value>
+                  </Parameter>
+                </Parameters>				
+                <TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+              </ProbeAction>
+            </MemberModules>
+            <Composition>
+              <Node ID="PA">
+                <Node ID="Scheduler" />
+              </Node>
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.PropertyBagData</OutputType>
+      </DataSourceModuleType>	
+    </ModuleTypes>
+    <MonitorTypes>
+      <UnitMonitorType ID="Demo.FolderMonitoring.FolderItemsCount.MonitorType" Accessibility="Internal">
+        <MonitorTypeStates>
+          <MonitorTypeState ID="Error" NoDetection="false" />
+          <MonitorTypeState ID="Warning" NoDetection="false" />
+		  <MonitorTypeState ID="Success" NoDetection="false" />
+        </MonitorTypeStates>
+        <Configuration>
+          <xsd:element minOccurs="1" type="xsd:integer" name="IntervalSeconds" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+		  <xsd:element minOccurs="1" type="xsd:string" name="FolderPath" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" type="xsd:integer" name="TimeoutSeconds" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+		  <xsd:element minOccurs="1" type="xsd:integer" name="WarningThreshold" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+		  <xsd:element minOccurs="1" type="xsd:integer" name="CriticalThreshold" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />		  
+        </Configuration>
+        <OverrideableParameters>
+		  <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+		  <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />
+		  <OverrideableParameter ID="WarningThreshold" Selector="$Config/WarningThreshold$" ParameterType="int" />
+		  <OverrideableParameter ID="CriticalThreshold" Selector="$Config/CriticalThreshold$" ParameterType="int" />		  
+        </OverrideableParameters>
+        <MonitorImplementation>
+          <MemberModules>
+            <DataSource ID="DS" TypeID="Demo.FolderMonitoring.Performance.Filtered.DS">
+			  <IntervalSeconds>$Config/IntervalSeconds$</IntervalSeconds>
+              <FolderPath>$Config/FolderPath$</FolderPath>
+			  <TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+            </DataSource>
+            <ConditionDetection ID="HealthyCondition" TypeID="System!System.ExpressionFilter">
+			  <Expression>
+				<SimpleExpression>
+				  <ValueExpression>
+					<XPathQuery Type="Integer">Property[@Name='FolderItemsCount']</XPathQuery>
+				  </ValueExpression>
+				  <Operator>Greater</Operator>
+				  <ValueExpression>
+					<Value Type="Integer">$Config/WarningThreshold$</Value>
+				  </ValueExpression>
+				</SimpleExpression>
+			  </Expression>
+            </ConditionDetection>
+            <ConditionDetection ID="WarningCondition" TypeID="System!System.ExpressionFilter">
+              <Expression>
+                <And>
+                  <Expression>
+                    <SimpleExpression>
+                      <ValueExpression>
+                        <XPathQuery Type="Integer">Property[@Name='FolderItemsCount']</XPathQuery>
+                      </ValueExpression>
+                      <Operator>LessEqual</Operator>
+                      <ValueExpression>
+                        <Value Type="Integer">$Config/WarningThreshold$</Value>
+                      </ValueExpression>
+                    </SimpleExpression>
+                  </Expression>
+                  <Expression>
+                    <SimpleExpression>
+                      <ValueExpression>
+                        <XPathQuery Type="Integer">Property[@Name='FolderItemsCount']</XPathQuery>
+                      </ValueExpression>
+                      <Operator>Greater</Operator>
+                      <ValueExpression>
+                        <Value Type="Integer">$Config/CriticalThreshold$</Value>
+                      </ValueExpression>
+                    </SimpleExpression>
+                  </Expression>
+				</And>
+		      </Expression>				  
+            </ConditionDetection>			
+            <ConditionDetection ID="CriticalCondition" TypeID="System!System.ExpressionFilter">
+			  <Expression>
+				<SimpleExpression>
+				  <ValueExpression>
+					<XPathQuery Type="Integer">Property[@Name='FolderItemsCount']</XPathQuery>
+				  </ValueExpression>
+				  <Operator>LessEqual</Operator>
+				  <ValueExpression>
+					<Value Type="Integer">$Config/CriticalThreshold$</Value>
+				  </ValueExpression>
+				</SimpleExpression>
+			  </Expression>
+            </ConditionDetection>
+          </MemberModules>
+          <RegularDetections>
+            <RegularDetection MonitorTypeStateID="Error">
+              <Node ID="CriticalCondition">
+                <Node ID="DS" />
+              </Node>
+            </RegularDetection>
+            <RegularDetection MonitorTypeStateID="Success">
+              <Node ID="HealthyCondition">
+                <Node ID="DS" />
+              </Node>
+            </RegularDetection>
+            <RegularDetection MonitorTypeStateID="Warning">
+              <Node ID="WarningCondition">
+                <Node ID="DS" />
+              </Node>
+            </RegularDetection>
+          </RegularDetections>
+        </MonitorImplementation>
+      </UnitMonitorType>
+      <UnitMonitorType ID="Demo.FolderMonitoring.FolderSizeMB.MonitorType" Accessibility="Internal">
+        <MonitorTypeStates>
+          <MonitorTypeState ID="Error" NoDetection="false" />
+          <MonitorTypeState ID="Warning" NoDetection="false" />
+		  <MonitorTypeState ID="Success" NoDetection="false" />
+        </MonitorTypeStates>
+        <Configuration>
+          <xsd:element minOccurs="1" type="xsd:integer" name="IntervalSeconds" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+		  <xsd:element minOccurs="1" type="xsd:string" name="FolderPath" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" type="xsd:integer" name="TimeoutSeconds" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+		  <xsd:element minOccurs="1" type="xsd:integer" name="WarningThreshold" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+		  <xsd:element minOccurs="1" type="xsd:integer" name="CriticalThreshold" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />		  
+        </Configuration>
+        <OverrideableParameters>
+		  <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+		  <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />
+		  <OverrideableParameter ID="WarningThreshold" Selector="$Config/WarningThreshold$" ParameterType="int" />
+		  <OverrideableParameter ID="CriticalThreshold" Selector="$Config/CriticalThreshold$" ParameterType="int" />		  
+        </OverrideableParameters>
+        <MonitorImplementation>
+          <MemberModules>
+            <DataSource ID="DS" TypeID="Demo.FolderMonitoring.Performance.Filtered.DS">
+			  <IntervalSeconds>$Config/IntervalSeconds$</IntervalSeconds>
+              <FolderPath>$Config/FolderPath$</FolderPath>
+			  <TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+            </DataSource>
+            <ConditionDetection ID="HealthyCondition" TypeID="System!System.ExpressionFilter">
+			  <Expression>
+				<SimpleExpression>
+				  <ValueExpression>
+					<XPathQuery Type="Integer">Property[@Name='FolderSizeMB']</XPathQuery>
+				  </ValueExpression>
+				  <Operator>Greater</Operator>
+				  <ValueExpression>
+					<Value Type="Integer">$Config/WarningThreshold$</Value>
+				  </ValueExpression>
+				</SimpleExpression>
+			  </Expression>
+            </ConditionDetection>
+            <ConditionDetection ID="WarningCondition" TypeID="System!System.ExpressionFilter">
+              <Expression>
+                <And>
+                  <Expression>
+                    <SimpleExpression>
+                      <ValueExpression>
+                        <XPathQuery Type="Integer">Property[@Name='FolderSizeMB']</XPathQuery>
+                      </ValueExpression>
+                      <Operator>LessEqual</Operator>
+                      <ValueExpression>
+                        <Value Type="Integer">$Config/WarningThreshold$</Value>
+                      </ValueExpression>
+                    </SimpleExpression>
+                  </Expression>
+                  <Expression>
+                    <SimpleExpression>
+                      <ValueExpression>
+                        <XPathQuery Type="Integer">Property[@Name='FolderSizeMB']</XPathQuery>
+                      </ValueExpression>
+                      <Operator>Greater</Operator>
+                      <ValueExpression>
+                        <Value Type="Integer">$Config/CriticalThreshold$</Value>
+                      </ValueExpression>
+                    </SimpleExpression>
+                  </Expression>
+				</And>
+		      </Expression>				  
+            </ConditionDetection>			
+            <ConditionDetection ID="CriticalCondition" TypeID="System!System.ExpressionFilter">
+			  <Expression>
+				<SimpleExpression>
+				  <ValueExpression>
+					<XPathQuery Type="Integer">Property[@Name='FolderSizeMB']</XPathQuery>
+				  </ValueExpression>
+				  <Operator>LessEqual</Operator>
+				  <ValueExpression>
+					<Value Type="Integer">$Config/CriticalThreshold$</Value>
+				  </ValueExpression>
+				</SimpleExpression>
+			  </Expression>
+            </ConditionDetection>
+          </MemberModules>
+          <RegularDetections>
+            <RegularDetection MonitorTypeStateID="Error">
+              <Node ID="CriticalCondition">
+                <Node ID="DS" />
+              </Node>
+            </RegularDetection>
+            <RegularDetection MonitorTypeStateID="Success">
+              <Node ID="HealthyCondition">
+                <Node ID="DS" />
+              </Node>
+            </RegularDetection>
+            <RegularDetection MonitorTypeStateID="Warning">
+              <Node ID="WarningCondition">
+                <Node ID="DS" />
+              </Node>
+            </RegularDetection>
+          </RegularDetections>
+        </MonitorImplementation>
+      </UnitMonitorType>	  
+	</MonitorTypes>
+  </TypeDefinitions>
+  <Monitoring>
+    <Discoveries>
+      <Discovery ID="Demo.FolderMonitoring.Class.Discovery" Target="Windows!Microsoft.Windows.Server.OperatingSystem" Enabled="true" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+      <!-- We choose Microsoft.Windows.Server.OperatingSystem as the preferred target class to ensure this will run on all Windows Servers, but will not create duplicates on clusters -->
+        <Category>Discovery</Category>
+        <DiscoveryTypes>
+	      <DiscoveryClass TypeID="Demo.FolderMonitoring.Class">
+            <Property PropertyID="FolderPath"/>
+          </DiscoveryClass>
+        </DiscoveryTypes>
+        <DataSource ID="DS" TypeID="Demo.FolderMonitoring.FolderPath.Discovery.DS">
+          <IntervalSeconds>86400</IntervalSeconds>
+          <SyncTime></SyncTime>
+          <DebugLogging>false</DebugLogging>
+          <FolderPathList>%WINDIR%\Temp</FolderPathList>
+          <TimeoutSeconds>120</TimeoutSeconds>		  
+        </DataSource>
+      </Discovery>
+    </Discoveries>
+    <Rules>
+	  <Rule ID="Demo.FolderMonitoring.FolderItemsCount.PerformanceCollection.Rule" Enabled="true" Target="Demo.FolderMonitoring.Class" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+		<Category>PerformanceCollection</Category>
+		<DataSources>
+		  <DataSource ID="DS" TypeID="Demo.FolderMonitoring.Performance.Filtered.DS">
+			<IntervalSeconds>900</IntervalSeconds>
+			<FolderPath>$Target/Property[Type="Demo.FolderMonitoring.Class"]/FolderPath$</FolderPath>
+			<TimeoutSeconds>300</TimeoutSeconds>
+		  </DataSource>
+		</DataSources>
+		<ConditionDetection ID="System.Performance.DataGenericMapper" TypeID="Perf!System.Performance.DataGenericMapper">
+		  <ObjectName>Folder</ObjectName>
+		  <CounterName>FolderItemsCount</CounterName>
+		  <InstanceName>$Data/Property[@Name='FolderPath']$</InstanceName>
+		  <Value>$Data/Property[@Name='FolderItemsCount']$</Value>
+		</ConditionDetection>
+		<WriteActions>
+		  <WriteAction ID="WriteToDB" TypeID="SC!Microsoft.SystemCenter.CollectPerformanceData" />  <!-- Can be optional - collect this data to the Operations Database.  -->
+		  <WriteAction ID="WriteToDW" TypeID="MSDL!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />  <!-- Can be optional - collect this data to the Data Warehouse Database -->
+		</WriteActions>
+	  </Rule>
+	  <Rule ID="Demo.FolderMonitoring.FolderSizeMB.PerformanceCollection.Rule" Enabled="true" Target="Demo.FolderMonitoring.Class" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+		<Category>PerformanceCollection</Category>
+		<DataSources>
+		  <DataSource ID="DS" TypeID="Demo.FolderMonitoring.Performance.Filtered.DS">
+			<IntervalSeconds>900</IntervalSeconds>
+			<FolderPath>$Target/Property[Type="Demo.FolderMonitoring.Class"]/FolderPath$</FolderPath>
+			<TimeoutSeconds>300</TimeoutSeconds>
+		  </DataSource>
+		</DataSources>
+		<ConditionDetection ID="System.Performance.DataGenericMapper" TypeID="Perf!System.Performance.DataGenericMapper">
+		  <ObjectName>Folder</ObjectName>
+		  <CounterName>FolderSizeMB</CounterName>
+		  <InstanceName>$Data/Property[@Name='FolderPath']$</InstanceName>
+		  <Value>$Data/Property[@Name='FolderSizeMB']$</Value>
+		</ConditionDetection>
+		<WriteActions>
+		  <WriteAction ID="WriteToDB" TypeID="SC!Microsoft.SystemCenter.CollectPerformanceData" />  <!-- Can be optional - collect this data to the Operations Database.  -->
+		  <WriteAction ID="WriteToDW" TypeID="MSDL!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />  <!-- Can be optional - collect this data to the Data Warehouse Database -->
+		</WriteActions>
+	  </Rule>	  
+	  <Rule ID="Demo.FolderMonitoring.FolderAgeMinutes.PerformanceCollection.Rule" Enabled="true" Target="Demo.FolderMonitoring.Class" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+		<Category>PerformanceCollection</Category>
+		<DataSources>
+		  <DataSource ID="DS" TypeID="Demo.FolderMonitoring.Performance.Filtered.DS">
+			<IntervalSeconds>900</IntervalSeconds>
+			<FolderPath>$Target/Property[Type="Demo.FolderMonitoring.Class"]/FolderPath$</FolderPath>
+			<TimeoutSeconds>300</TimeoutSeconds>
+		  </DataSource>
+		</DataSources>
+		<ConditionDetection ID="System.Performance.DataGenericMapper" TypeID="Perf!System.Performance.DataGenericMapper">
+		  <ObjectName>Folder</ObjectName>
+		  <CounterName>FolderAgeMinutes</CounterName>
+		  <InstanceName>$Data/Property[@Name='FolderPath']$</InstanceName>
+		  <Value>$Data/Property[@Name='FolderAgeMinutes']$</Value>
+		</ConditionDetection>
+		<WriteActions>
+		  <WriteAction ID="WriteToDB" TypeID="SC!Microsoft.SystemCenter.CollectPerformanceData" />  <!-- Can be optional - collect this data to the Operations Database.  -->
+		  <WriteAction ID="WriteToDW" TypeID="MSDL!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />  <!-- Can be optional - collect this data to the Data Warehouse Database -->
+		</WriteActions>
+	  </Rule>	  
+    </Rules>
+    <Monitors>
+      <UnitMonitor ID="Demo.FolderMonitoring.FolderItemsCount.Monitor" Accessibility="Public" Enabled="false" Target="Demo.FolderMonitoring.Class" ParentMonitorID="Health!System.Health.AvailabilityState" Remotable="true" Priority="Normal" TypeID="Demo.FolderMonitoring.FolderItemsCount.MonitorType" ConfirmDelivery="false">
+		<Category>AvailabilityHealth</Category>
+		<AlertSettings AlertMessage="Demo.FolderMonitoring.FolderItemsCount.Monitor.AlertMessage">
+			<AlertOnState>Error</AlertOnState>
+			<AutoResolve>true</AutoResolve>
+			<AlertPriority>Normal</AlertPriority>
+			<AlertSeverity>MatchMonitorHealth</AlertSeverity>
+			<AlertParameters>
+				<AlertParameter1>$Data/Context/Property[@Name="FolderPath"]$</AlertParameter1>
+				<AlertParameter2>$Data/Context/Property[@Name="FolderItemsCount"]$</AlertParameter2>
+				<AlertParameter3>$Data/Context/Property[@Name="FolderSizeMB"]$</AlertParameter3>
+			</AlertParameters>
+		</AlertSettings>
+		<OperationalStates>
+			<OperationalState ID="Error" MonitorTypeStateID="Error" HealthState="Error" />
+			<OperationalState ID="Warning" MonitorTypeStateID="Warning" HealthState="Warning" />
+			<OperationalState ID="Success" MonitorTypeStateID="Success" HealthState="Success" />
+		</OperationalStates>
+		<Configuration>
+			<IntervalSeconds>900</IntervalSeconds>
+			<FolderPath>$Target/Property[Type="Demo.FolderMonitoring.Class"]/FolderPath$</FolderPath>
+			<TimeoutSeconds>300</TimeoutSeconds>
+			<WarningThreshold>15</WarningThreshold>
+			<CriticalThreshold>5</CriticalThreshold>
+		</Configuration>
+      </UnitMonitor>	  
+      <UnitMonitor ID="Demo.FolderMonitoring.FolderSizeMB.Monitor" Accessibility="Public" Enabled="false" Target="Demo.FolderMonitoring.Class" ParentMonitorID="Health!System.Health.AvailabilityState" Remotable="true" Priority="Normal" TypeID="Demo.FolderMonitoring.FolderSizeMB.MonitorType" ConfirmDelivery="false">
+		<Category>AvailabilityHealth</Category>
+		<AlertSettings AlertMessage="Demo.FolderMonitoring.FolderSizeMB.Monitor.AlertMessage">
+			<AlertOnState>Error</AlertOnState>
+			<AutoResolve>true</AutoResolve>
+			<AlertPriority>Normal</AlertPriority>
+			<AlertSeverity>MatchMonitorHealth</AlertSeverity>
+			<AlertParameters>
+				<AlertParameter1>$Data/Context/Property[@Name="FolderPath"]$</AlertParameter1>
+				<AlertParameter2>$Data/Context/Property[@Name="FolderItemsCount"]$</AlertParameter2>
+				<AlertParameter3>$Data/Context/Property[@Name="FolderSizeMB"]$</AlertParameter3>
+			</AlertParameters>
+		</AlertSettings>
+		<OperationalStates>
+			<OperationalState ID="Error" MonitorTypeStateID="Error" HealthState="Error" />
+			<OperationalState ID="Warning" MonitorTypeStateID="Warning" HealthState="Warning" />
+			<OperationalState ID="Success" MonitorTypeStateID="Success" HealthState="Success" />
+		</OperationalStates>
+		<Configuration>
+			<IntervalSeconds>900</IntervalSeconds>
+			<FolderPath>$Target/Property[Type="Demo.FolderMonitoring.Class"]/FolderPath$</FolderPath>
+			<TimeoutSeconds>300</TimeoutSeconds>
+			<WarningThreshold>10</WarningThreshold>
+			<CriticalThreshold>5</CriticalThreshold>
+		</Configuration>
+      </UnitMonitor>	  
+    </Monitors>
+  </Monitoring>
+  <Presentation>
+    <Views>
+      <View ID="Demo.FolderMonitoring.Class.State.View" Accessibility="Public" Enabled="true" Target="Demo.FolderMonitoring.Class" TypeID="SC!Microsoft.SystemCenter.StateViewType" Visible="true">
+        <Category>Operations</Category>
+        <Criteria>
+          <InMaintenanceMode>false</InMaintenanceMode>
+        </Criteria>
+        <Presentation>
+          <ColumnInfo Index="0" SortIndex="0" Width="100" Grouped="false" Sorted="true" IsSortable="true" Visible="true" SortOrder="Descending">
+            <Name>State</Name>
+            <Id>Demo.FolderMonitoring.Class.State.View</Id>
+          </ColumnInfo>
+          <ColumnInfo Index="1" SortIndex="-1" Width="100" Grouped="false" Sorted="false" IsSortable="true" Visible="true" SortOrder="Ascending">
+            <Name>Maintenance Mode</Name>
+            <Id>InMaintenanceMode</Id>
+          </ColumnInfo>
+          <ColumnInfo Index="2" SortIndex="-1" Width="100" Grouped="false" Sorted="false" IsSortable="true" Visible="true" SortOrder="Ascending">
+            <Name>Name</Name>
+            <Id>Name</Id>
+          </ColumnInfo>
+          <ColumnInfo Index="3" SortIndex="-1" Width="100" Grouped="false" Sorted="false" IsSortable="true" Visible="true" SortOrder="Ascending">
+            <Name>Path</Name>
+            <Id>Path</Id>
+          </ColumnInfo>
+          <ColumnInfo Index="4" SortIndex="-1" Width="100" Grouped="false" Sorted="false" IsSortable="true" Visible="false" SortOrder="Ascending">
+            <Name>Display Name</Name>
+            <Id>System.Entity/DisplayName</Id>
+          </ColumnInfo>
+          <ColumnInfo Index="5" SortIndex="-1" Width="100" Grouped="false" Sorted="false" IsSortable="true" Visible="false" SortOrder="Ascending">
+            <Name>Name</Name>
+            <Id>Demo.FolderMonitoring.Class/FolderPath</Id>
+          </ColumnInfo>
+        </Presentation>
+        <Target />
+      </View>
+      <View ID="Demo.FolderMonitoring.Class.Performance.View" Accessibility="Public" Enabled="true" Target="Demo.FolderMonitoring.Class" TypeID="SC!Microsoft.SystemCenter.PerformanceViewType" Visible="true">
+        <Category>Operations</Category>
+        <Criteria />
+        <Presentation>
+          <SortedColumnIndex>0</SortedColumnIndex>
+          <SortOrder>0</SortOrder>
+          <StartTime>2023-11-08T11:21:49.5821425-05:00</StartTime>
+          <EndTime>2023-11-09T11:21:49.5831449-05:00</EndTime>
+          <DynamicTimeTicks>864000000000</DynamicTimeTicks>
+          <IsDynamic>true</IsDynamic>
+          <Is3DMode>false</Is3DMode>
+          <ShowAlerts>false</ShowAlerts>
+          <ShowMaintenanceMode>false</ShowMaintenanceMode>
+          <BaselineMode>false</BaselineMode>
+          <ShowPointLabels>false</ShowPointLabels>
+          <EnableSmartLabels>true</EnableSmartLabels>
+          <RightAngleAxes>false</RightAngleAxes>
+          <ClusterSeries>false</ClusterSeries>
+          <Title />
+          <TitleFont>Microsoft Sans Serif,12,Regular</TitleFont>
+          <ChartFont>Microsoft Sans Serif,8.25,Regular</ChartFont>
+          <ShowBands>false</ShowBands>
+          <BandColor>-1579033</BandColor>
+          <ChartType>Line</ChartType>
+          <Depth>100</Depth>
+          <GapDepth>100</GapDepth>
+          <Perspective>10</Perspective>
+          <GraphXRotation>0</GraphXRotation>
+          <GraphYRotation>0</GraphYRotation>
+          <XLabelAngle>0</XLabelAngle>
+          <LabelColor>-16777216</LabelColor>
+          <LabelFont>Microsoft Sans Serif,8.25,Regular</LabelFont>
+          <XAxisVisible>True</XAxisVisible>
+          <XShowMajorGridlines>false</XShowMajorGridlines>
+          <XShowMinorGridlines>false</XShowMinorGridlines>
+          <ShowInterlaceStrips>false</ShowInterlaceStrips>
+          <XInterlaceColor>16777215</XInterlaceColor>
+          <XShowSideMargin>true</XShowSideMargin>
+          <XAxisFont>Microsoft Sans Serif,8.25,Regular</XAxisFont>
+          <AutoAxis>true</AutoAxis>
+          <AxisMax>100</AxisMax>
+          <AxisMin>0</AxisMin>
+          <YAxisVisible>True</YAxisVisible>
+          <YShowMajorGridlines>true</YShowMajorGridlines>
+          <YShowMinorGridlines>false</YShowMinorGridlines>
+          <YShowInterlaceStrips>false</YShowInterlaceStrips>
+          <YShowSideMargin>true</YShowSideMargin>
+          <YAxisFont>Microsoft Sans Serif,8.25,Regular</YAxisFont>
+          <BackgroundColor1>-1</BackgroundColor1>
+          <BackgroundColor2>-1</BackgroundColor2>
+          <GradientType>None</GradientType>
+          <Series />
+        </Presentation>
+        <Target />
+      </View>
+    </Views>
+    <Folders>
+      <Folder ID="Demo.FolderMonitoring.Root.Folder" Accessibility="Public" ParentFolder="SC!Microsoft.SystemCenter.Monitoring.ViewFolder.Root" />
+    </Folders>
+    <FolderItems>
+      <FolderItem ElementID="Demo.FolderMonitoring.Class.State.View" ID="Demo.FolderMonitoring.Class.State.View.FolderItem" Folder="Demo.FolderMonitoring.Root.Folder" />
+      <FolderItem ElementID="Demo.FolderMonitoring.Class.Performance.View" ID="Demo.FolderMonitoring.Class.Performance.View.FolderItem" Folder="Demo.FolderMonitoring.Root.Folder" />
+    </FolderItems>
+	<StringResources>
+		<StringResource ID="Demo.FolderMonitoring.FolderItemsCount.Monitor.AlertMessage" />
+		<StringResource ID="Demo.FolderMonitoring.FolderSizeMB.Monitor.AlertMessage" />
+	</StringResources>
+  </Presentation>
+  <LanguagePacks>
+    <LanguagePack ID="ENU" IsDefault="true">
+      <DisplayStrings>
+        <DisplayString ElementID="Demo.FolderMonitoring">
+          <Name>Demo Folder Monitoring</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.Class">
+          <Name>Folder</Name>
+          <Description>This class holds defined folders that should be monitored.</Description>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.Class" SubElementID="FolderPath">
+          <Name>FolderPath</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.Class.Discovery">
+          <Name>Demo Folder Monitoring Class Discovery</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.Root.Folder">
+          <Name>Demo Folder Monitoring</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.Class.State.View">
+          <Name>Folder State</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.Class.Performance.View">
+          <Name>Folder Performance</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.FolderItemsCount.Monitor">
+          <Name>Folder FolderItemsCount Monitor</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.FolderItemsCount.Monitor" SubElementID="Error">
+          <Name>Critical</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.FolderItemsCount.Monitor" SubElementID="Warning">
+          <Name>Warning</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.FolderItemsCount.Monitor" SubElementID="Success">
+          <Name>Healthy</Name>
+        </DisplayString>
+		<DisplayString ElementID="Demo.FolderMonitoring.FolderItemsCount.Monitor.AlertMessage">
+					<Name>Folder FolderItemsCount Alert</Name>
+					<Description>FolderItemsCount is above a threshold
+Folder: {0}
+FolderItemsCount: {1}
+</Description>
+		</DisplayString>		
+        <DisplayString ElementID="Demo.FolderMonitoring.FolderSizeMB.Monitor">
+          <Name>Folder FolderSizeMB Monitor</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.FolderSizeMB.Monitor" SubElementID="Error">
+          <Name>Critical</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.FolderSizeMB.Monitor" SubElementID="Warning">
+          <Name>Warning</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.FolderSizeMB.Monitor" SubElementID="Success">
+          <Name>Healthy</Name>
+        </DisplayString>
+		<DisplayString ElementID="Demo.FolderMonitoring.FolderSizeMB.Monitor.AlertMessage">
+					<Name>Folder FolderSizeMB Alert</Name>
+					<Description>FolderSizeMB is above a threshold.
+Folder: {0}
+FolderSizeMB: {1}
+</Description>
+		</DisplayString>		
+        <DisplayString ElementID="Demo.FolderMonitoring.FolderItemsCount.PerformanceCollection.Rule">
+          <Name>Folder FolderItemsCount Performance Collection Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.FolderAgeMinutes.PerformanceCollection.Rule">
+          <Name>Folder FolderAgeMinutes Performance Collection Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Demo.FolderMonitoring.FolderSizeMB.PerformanceCollection.Rule">
+          <Name>Folder FolderSizeMB Performance Collection Rule</Name>
+        </DisplayString>
+      </DisplayStrings>
+    </LanguagePack>
+  </LanguagePacks>
+</ManagementPack>
